@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -8,55 +9,64 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds the portwatch daemon configuration.
+// Config holds the full portwatch configuration.
 type Config struct {
-	ScanInterval time.Duration `yaml:"scan_interval"`
-	Ports        []int         `yaml:"ports"`
-	AlertOnNew   bool          `yaml:"alert_on_new"`
-	AlertOnClosed bool         `yaml:"alert_on_closed"`
-	LogFile      string        `yaml:"log_file"`
+	Ports    []int         `yaml:"ports"`
+	Interval time.Duration `yaml:"interval"`
+	LogFile  string        `yaml:"log_file"`
+	Snapshot string        `yaml:"snapshot"`
+	Webhook  WebhookConfig `yaml:"webhook"`
+}
+
+// WebhookConfig holds optional webhook alert settings.
+type WebhookConfig struct {
+	URL     string        `yaml:"url"`
+	Timeout time.Duration `yaml:"timeout"`
 }
 
 // Default returns a Config populated with sensible defaults.
-func Default() *Config {
-	return &Config{
-		ScanInterval:  30 * time.Second,
-		Ports:         []int{},
-		AlertOnNew:    true,
-		AlertOnClosed: true,
-		LogFile:       "",
+func Default() Config {
+	return Config{
+		Ports:    []int{},
+		Interval: 30 * time.Second,
+		LogFile:  "portwatch.log",
+		Snapshot: "portwatch.snap",
+		Webhook: WebhookConfig{
+			Timeout: 5 * time.Second,
+		},
 	}
 }
 
-// Load reads and parses a YAML config file from the given path.
-// Missing fields fall back to defaults.
-func Load(path string) (*Config, error) {
+// Load reads a YAML config file and merges it with defaults.
+func Load(path string) (Config, error) {
 	cfg := Default()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("config: read file: %w", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return cfg, nil
+		}
+		return cfg, fmt.Errorf("config: read %s: %w", path, err)
 	}
 
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("config: parse yaml: %w", err)
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return cfg, fmt.Errorf("config: parse %s: %w", path, err)
 	}
 
-	if err := cfg.Validate(); err != nil {
-		return nil, err
+	if err := validate(cfg); err != nil {
+		return cfg, fmt.Errorf("config: %w", err)
 	}
 
 	return cfg, nil
 }
 
-// Validate checks that the configuration values are sensible.
-func (c *Config) Validate() error {
-	if c.ScanInterval < time.Second {
-		return fmt.Errorf("config: scan_interval must be at least 1s, got %s", c.ScanInterval)
+func validate(cfg Config) error {
+	if cfg.Interval < time.Second {
+		return fmt.Errorf("interval must be at least 1s, got %s", cfg.Interval)
 	}
-	for _, p := range c.Ports {
+	for _, p := range cfg.Ports {
 		if p < 1 || p > 65535 {
-			return fmt.Errorf("config: port %d is out of valid range (1-65535)", p)
+			return fmt.Errorf("invalid port %d: must be 1–65535", p)
 		}
 	}
 	return nil
