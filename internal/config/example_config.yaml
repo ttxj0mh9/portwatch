@@ -1,9 +1,12 @@
 # portwatch configuration file
 
 # How often to scan for open ports (minimum: 1s)
+# Examples: 30s, 1m, 5m
 scan_interval: 30s
 
 # Specific ports to watch. Leave empty to scan all common ports.
+# Common ports: 22 (SSH), 80 (HTTP), 443 (HTTPS), 3306 (MySQL),
+#               5432 (Postgres), 6379 (Redis), 8080, 8443
 # ports: [22, 80, 443, 8080, 8443]
 ports: []
 
@@ -16,3 +19,7 @@ alert_on_closed: true
 # Path to write alert log output. Leave empty to write to stdout.
 # log_file: /var/log/portwatch.log
 log_file: ""
+
+# Number of consecutive scan failures before an alert is suppressed.
+# Set to 0 to never suppress alerts due to scan failures.
+max_failures: 3
