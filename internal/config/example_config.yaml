@@ -1,0 +1,18 @@
+# portwatch configuration file
+
+# How often to scan for open ports (minimum: 1s)
+scan_interval: 30s
+
+# Specific ports to watch. Leave empty to scan all common ports.
+# ports: [22, 80, 443, 8080, 8443]
+ports: []
+
+# Alert when a new port is detected as open
+alert_on_new: true
+
+# Alert when a previously open port is no longer open
+alert_on_closed: true
+
+# Path to write alert log output. Leave empty to write to stdout.
+# log_file: /var/log/portwatch.log
+log_file: ""
