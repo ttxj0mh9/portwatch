@@ -1,11 +1,10 @@
-package config_test
+package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/user/portwatch/internal/config"
 )
 
 func writeTempConfig(t *testing.T, content string) string {
@@ -22,69 +21,94 @@ func writeTempConfig(t *testing.T, content string) string {
 }
 
 func TestLoad_Defaults(t *testing.T) {
-	path := writeTempConfig(t, "scan_interval: 60s\n")
-	cfg, err := config.Load(path)
+	path := writeTempConfig(t, "{}\n")
+	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.ScanInterval != 60*time.Second {
-		t.Errorf("expected 60s, got %s", cfg.ScanInterval)
+	if cfg.ScanInterval != 30*time.Second {
+		t.Errorf("expected 30s, got %v", cfg.ScanInterval)
 	}
-	if !cfg.AlertOnNew {
-		t.Error("expected AlertOnNew to default to true")
+	if cfg.Snapshot.BackupCount != 3 {
+		t.Errorf("expected backup_count 3, got %d", cfg.Snapshot.BackupCount)
+	}
+	if cfg.Alerts.Log == nil {
+		t.Error("expected default log handler to be enabled")
 	}
 }
 
 func TestLoad_FullConfig(t *testing.T) {
 	content := `
 scan_interval: 10s
-ports: [22, 80, 443]
-alert_on_new: true
-alert_on_closed: false
-log_file: /var/log/portwatch.log
+ports:
+  include: [80, 443]
+  exclude: [22]
+snapshot:
+  path: /tmp/snap.json
+  backup_count: 5
+alerts:
+  teams:
+    webhook_url: https://example.webhook.office.com/abc
+  slack:
+    webhook_url: https://hooks.slack.com/xyz
 `
 	path := writeTempConfig(t, content)
-	cfg, err := config.Load(path)
+	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cfg.Ports) != 3 {
-		t.Errorf("expected 3 ports, got %d", len(cfg.Ports))
+	if cfg.ScanInterval != 10*time.Second {
+		t.Errorf("expected 10s, got %v", cfg.ScanInterval)
 	}
-	if cfg.AlertOnClosed {
-		t.Error("expected AlertOnClosed to be false")
+	if len(cfg.Ports.Include) != 2 {
+		t.Errorf("expected 2 included ports, got %d", len(cfg.Ports.Include))
 	}
-	if cfg.LogFile != "/var/log/portwatch.log" {
-		t.Errorf("unexpected log_file: %s", cfg.LogFile)
+	if cfg.Alerts.Teams == nil || cfg.Alerts.Teams.WebhookURL == "" {
+		t.Error("expected teams config to be populated")
+	}
+	if cfg.Snapshot.BackupCount != 5 {
+		t.Errorf("expected 5, got %d", cfg.Snapshot.BackupCount)
 	}
 }
 
 func TestLoad_InvalidInterval(t *testing.T) {
-	path := writeTempConfig(t, "scan_interval: 500ms\n")
-	_, err := config.Load(path)
+	path := writeTempConfig(t, "scan_interval: not-a-duration\n")
+	_, err := Load(path)
 	if err == nil {
-		t.Fatal("expected validation error for short interval")
+		t.Fatal("expected error for invalid interval")
 	}
 }
 
 func TestLoad_InvalidPort(t *testing.T) {
-	path := writeTempConfig(t, "ports: [0, 80]\n")
-	_, err := config.Load(path)
+	path := writeTempConfig(t, "ports:\n  include: [99999]\n")
+	_, err := Load(path)
 	if err == nil {
-		t.Fatal("expected validation error for port 0")
+		t.Fatal("expected error for out-of-range port")
 	}
 }
 
 func TestLoad_MissingFile(t *testing.T) {
-	_, err := config.Load("/nonexistent/portwatch.yaml")
+	_, err := Load(filepath.Join(t.TempDir(), "nonexistent.yaml"))
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
 }
 
-func TestDefault(t *testing.T) {
-	cfg := config.Default()
-	if cfg.ScanInterval != 30*time.Second {
-		t.Errorf("expected default interval 30s, got %s", cfg.ScanInterval)
+func TestLoad_TeamsConfig(t *testing.T) {
+	content := `
+alerts:
+  teams:
+    webhook_url: https://example.webhook.office.com/teams/hook
+`
+	path := writeTempConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Alerts.Teams == nil {
+		t.Fatal("expected teams config, got nil")
+	}
+	if cfg.Alerts.Teams.WebhookURL != "https://example.webhook.office.com/teams/hook" {
+		t.Errorf("unexpected teams webhook URL: %s", cfg.Alerts.Teams.WebhookURL)
 	}
 }
