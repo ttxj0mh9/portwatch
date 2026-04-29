@@ -5,67 +5,69 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/user/portwatch/internal/config"
 )
 
-const opsGenieAPIURL = "https://api.opsgenie.com/v2/alerts"
+const opsgenieAPIURL = "https://api.opsgenie.com/v2/alerts"
 
-// OpsGenieHandler sends alerts to OpsGenie.
 type OpsGenieHandler struct {
-	apiKey string
-	client *http.Client
+	apiKey  string
+	tags    []string
+	client  *http.Client
+	apiURL  string
 }
 
-// NewOpsGenieHandler creates a new OpsGenieHandler.
-// Returns an error if apiKey is empty.
-func NewOpsGenieHandler(apiKey string) (*OpsGenieHandler, error) {
-	if apiKey == "" {
-		return nil, fmt.Errorf("opsGenie: api key must not be empty")
+func NewOpsGenieHandler(cfg config.OpsGenieConfig) (*OpsGenieHandler, error) {
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("opsgenie: api_key is required")
+	}
+	apiURL := cfg.APIURL
+	if apiURL == "" {
+		apiURL = opsgenieAPIURL
 	}
 	return &OpsGenieHandler{
-		apiKey: apiKey,
+		apiKey: cfg.APIKey,
+		tags:   cfg.Tags,
 		client: &http.Client{},
+		apiURL: apiURL,
 	}, nil
 }
 
-type opsGeniePayload struct {
-	Message     string `json:"message"`
-	Description string `json:"description"`
-	Priority    string `json:"priority"`
-}
-
-// Send dispatches an alert event to OpsGenie.
-func (h *OpsGenieHandler) Send(e Event) error {
+func (h *OpsGenieHandler) Send(event Event) error {
 	priority := "P3"
-	if e.Level == LevelAlert {
+	if event.Level == LevelAlert {
 		priority = "P1"
 	}
 
-	payload := opsGeniePayload{
-		Message:     fmt.Sprintf("portwatch: %s", e.Message),
-		Description: fmt.Sprintf("Port %s — %s", e.Port, e.Message),
-		Priority:    priority,
+	payload := map[string]interface{}{
+		"message":     event.Message,
+		"description": fmt.Sprintf("Port %s — %s", event.Port, event.Message),
+		"priority":    priority,
+		"tags":        h.tags,
+		"source":      "portwatch",
 	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("opsGenie: marshal payload: %w", err)
+		return fmt.Errorf("opsgenie: marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, opsGenieAPIURL, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, h.apiURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("opsGenie: create request: %w", err)
+		return fmt.Errorf("opsgenie: create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "GenieKey "+h.apiKey)
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("opsGenie: send request: %w", err)
+		return fmt.Errorf("opsgenie: send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("opsGenie: unexpected status %d", resp.StatusCode)
+		return fmt.Errorf("opsgenie: unexpected status %d", resp.StatusCode)
 	}
 	return nil
 }
