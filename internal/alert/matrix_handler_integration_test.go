@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/user/portwatch/internal/alert"
 	"github.com/user/portwatch/internal/scanner"
@@ -38,7 +39,7 @@ func TestMatrixHandler_RealServer(t *testing.T) {
 	select {
 	case <-received:
 		// success
-	default:
-		t.Error("server did not receive a request")
+	case <-time.After(3 * time.Second):
+		t.Error("timed out waiting for server to receive a request")
 	}
 }
